@@ -1,50 +1,61 @@
 use std::num::ParseIntError;
 
+#[derive(Debug, PartialEq)]
 enum ParseBatteryError {
+    TooShort,
     ParseBattery,
     ParseInt(ParseIntError),
 }
 
-fn max_battery(line: &str) -> Result<usize, ParseBatteryError> {
-    if line.len() < 2 {
-        return Err(ParseBatteryError::ParseBattery);
+// Naive, simple approach which is O(N*M) for len N and line with length M. But it doesn't matter,
+// Rust is fast.
+fn max_battery_of_length(len: usize, line: &str) -> Result<usize, ParseBatteryError> {
+    if line.len() < len {
+        return Err(ParseBatteryError::TooShort);
     }
-    let (greatest, neg_ind) = line
-        .get(..(line.len() - 1))
-        .ok_or(ParseBatteryError::ParseBattery)?
-        .chars()
-        .enumerate()
-        .map(|(ind, byt)| (byt, -(ind as isize)))
-        .max()
-        .ok_or(ParseBatteryError::ParseBattery)?;
-    // index was negated so we get the first occurrence of the greatest digit
-    let index: usize = (-neg_ind) as usize;
-    let second = line
-        .get((index + 1)..)
-        .ok_or(ParseBatteryError::ParseBattery)?
-        .chars()
-        .max()
-        .ok_or(ParseBatteryError::ParseBattery)?;
-    format!("{greatest}{second}")
-        .parse()
-        .map_err(ParseBatteryError::ParseInt)
+    let mut digits = String::new();
+    let mut prev_index: isize = -1; // a hack so we start looking at 0
+    for i in 0..len {
+        let start_index = (prev_index + 1) as usize;
+        let (greatest, neg_ind) = line
+            .get(start_index..(line.len() - len + 1 + i))
+            .ok_or(ParseBatteryError::ParseBattery)?
+            .chars()
+            .enumerate()
+            .map(|(ind, byt)| (byt, -(ind as isize)))
+            .max()
+            .ok_or(ParseBatteryError::ParseBattery)?;
+        digits.push(greatest);
+        prev_index = start_index as isize - neg_ind;
+    }
+    digits.parse().map_err(ParseBatteryError::ParseInt)
 }
 
-fn extract_batteries(r: impl std::io::BufRead) -> impl Iterator<Item = usize> {
+fn extract_batteries(r: impl std::io::BufRead) -> impl Iterator<Item = (usize, usize)> {
     r.lines()
         .map_while(Result::ok)
-        .map(|line| max_battery(&line))
-        .filter_map(Result::ok)
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            (
+                max_battery_of_length(2, &line).unwrap(),
+                max_battery_of_length(12, &line).unwrap(),
+            )
+        })
 }
 
 fn main() {
-    let result: usize = extract_batteries(std::io::stdin().lock()).sum();
-    println!("Sum of batteries: {result}");
+    let (orig, static_friction): (usize, usize) = extract_batteries(std::io::stdin().lock())
+        .fold((0, 0), |acc, joltages| {
+            (acc.0 + joltages.0, acc.1 + joltages.1)
+        });
+    println!("Sum of batteries: {orig}");
+    println!("Sum of batteries with static friction: {static_friction}");
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{extract_batteries, max_battery};
+    use crate::{extract_batteries, max_battery_of_length};
+    use std::io::BufRead;
 
     const EXAMPLE_INPUT: &str = "
 987654321111111
@@ -60,16 +71,50 @@ mod tests {
 1134322241232322332224331133221412522322512233243421322616252222333223234632221323236212122235222232";
 
     #[test]
-    fn test_extract_batteries() {
-        let input = std::io::BufReader::new(EXAMPLE_INPUT.as_bytes());
-        let result: Vec<usize> = extract_batteries(input).collect();
-        assert_eq!(result, vec![98, 89, 78, 92]);
+    fn test_max_battery_of_length_2() {
+        let expected = vec![98, 89, 78, 92];
+        for (line, exp) in std::io::BufReader::new(EXAMPLE_INPUT.as_bytes())
+            .lines()
+            .map_while(Result::ok)
+            .filter(|line| !line.is_empty())
+            .zip(expected)
+        {
+            assert_eq!(max_battery_of_length(2, &dbg!(line)), Ok(exp));
+        }
     }
 
     #[test]
-    fn test_extract_batteries_longer() {
+    fn test_max_battery_of_length_12() {
+        let expected = vec![987654321111, 811111111119, 434234234278, 888911112111];
+        for (line, exp) in std::io::BufReader::new(EXAMPLE_INPUT.as_bytes())
+            .lines()
+            .map_while(Result::ok)
+            .filter(|line| !line.is_empty())
+            .zip(expected)
+        {
+            assert_eq!(max_battery_of_length(12, &dbg!(line)), Ok(exp));
+        }
+    }
+
+    #[test]
+    fn test_extract_batteries() {
+        let input = std::io::BufReader::new(EXAMPLE_INPUT.as_bytes());
+        let result: Vec<(usize, usize)> = extract_batteries(input).collect();
+        assert_eq!(
+            result,
+            vec![
+                (98, 987654321111),
+                (89, 811111111119),
+                (78, 434234234278),
+                (92, 888911112111)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_extract_batteries_longer_input() {
         let input = std::io::BufReader::new(LONGER_INPUT.as_bytes());
-        let result: Vec<usize> = extract_batteries(input).collect();
+        let result: Vec<usize> = extract_batteries(input).map(|(x, _)| x).collect();
         assert_eq!(result, vec![87, 97, 99, 99, 66]);
     }
 }
