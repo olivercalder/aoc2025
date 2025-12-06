@@ -51,6 +51,10 @@ impl MyRange {
         self.start = self.start.min(other.start);
         self.end = self.end.max(other.end);
     }
+
+    fn total(&self) -> usize {
+        self.end - self.start + 1
+    }
 }
 
 /// A sorted vector of [MyRange]s, where no ranges may overlap. When adding a new range, if it
@@ -126,21 +130,28 @@ impl Ranges {
             None => false,
         }
     }
+
+    fn total(&self) -> usize {
+        self.0.iter().map(|r| r.total()).sum()
+    }
 }
 
-fn count_fresh(r: impl std::io::BufRead) -> usize {
+fn count_fresh(r: impl std::io::BufRead) -> (usize, usize) {
     let mut lines = r.lines().map_while(Result::ok);
     let ranges = Ranges::from(&mut lines);
-    lines
+    let available = lines
         .take_while(|line| !line.is_empty())
         .map(|line| line.parse::<usize>().unwrap())
         .filter(|num| ranges.contains(*num))
-        .count()
+        .count();
+    let all = ranges.total();
+    (available, all)
 }
 
 fn main() {
-    let fresh = count_fresh(std::io::stdin().lock());
-    println!("fresh ingredients: {fresh}");
+    let (available, all) = count_fresh(std::io::stdin().lock());
+    println!("available fresh ingredients: {available}");
+    println!("all fresh ingredients: {all}");
 }
 
 #[cfg(test)]
@@ -163,8 +174,8 @@ mod tests {
     #[test]
     fn test_count_fresh() {
         let input = std::io::BufReader::new(EXAMPLE_INPUT.as_bytes());
-        let result = count_fresh(input);
-        assert_eq!(result, 3);
+        let (available, all) = count_fresh(input);
+        assert_eq!((available, all), (3, 14));
     }
 
     const SINGLETON_INPUT: &str = "
@@ -185,8 +196,8 @@ mod tests {
     #[test]
     fn test_count_fresh_singleton() {
         let input = std::io::BufReader::new(SINGLETON_INPUT.as_bytes());
-        let result = count_fresh(input);
-        assert_eq!(result, 5);
+        let (available, all) = count_fresh(input);
+        assert_eq!((available, all), (5, 14));
     }
 
     const RANGE_INPUT: &str = "316912306652712-320683419496855
